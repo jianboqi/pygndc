@@ -1,0 +1,7 @@
+# This public repository is documentation-only.
+__pycache__/
+*.py[cod]
+*.whl
+*.tar.gz
+*.zip
+.DS_Store
