@@ -1,8 +1,11 @@
 # GeoNDC 编码器使用教程
 
 本文介绍如何使用 `pygndc` 将 GeoTIFF 影像、遥感时序和复合产品编码为
-`.gndc` 容器。标准 wheel 同时包含 reader、encoder、native CPU/WGPU runtime；
+`.gndc` 容器。1.0.14 标准 wheel 同时包含编码器和 CPU、WGPU、CUDA 解码器；
 PyTorch CUDA 与 tiny-cuda-nn 仅在选择 `tcnn_cuda` 时需要。
+
+预编译包支持 Python 3.10–3.13，平台为 Windows x86-64 和 Linux x86-64
+（glibc 2.28 或更新版本）。
 
 ```bash
 pygndc autocompress input.tif -o output.gndc
@@ -21,16 +24,18 @@ pygndc compress -c config.yaml
 |---|---|---|---|
 | `native_wgpu` | Vulkan、DX12 或 Metal GPU | 无 | 默认模式；覆盖 NVIDIA、AMD、Intel 与 Apple GPU，失败时回退 native CPU |
 | `native_cpu` | CPU | 无 | 无可用 GPU、服务器兼容模式或功能验证 |
+| `native_cuda` | NVIDIA GPU | 兼容的 NVIDIA 驱动 | 不需要安装 CUDA Toolkit；不可用时回退 CPU |
 | `tcnn_cuda` | NVIDIA CUDA GPU | PyTorch CUDA、CUDA Toolkit、tiny-cuda-nn | NVIDIA 平台上的可选高性能后端 |
 
-三种后端对标准 `hash3d`、无 deformation 的模型写入相同的 GeoNDC v0.9 权重布局。
+这些后端对标准 `hash3d`、无 deformation 的模型写入相同的 GeoNDC v0.9 权重布局。
 这类文件的编码后端不限制解码后端：由 `tcnn_cuda` 编码的文件可以使用
 `native_wgpu` 或 `native_cpu` 解码，反之亦然。tcnn 专有的 latent/deformation
-模型变体不在 native v1 的解码范围内。
+模型变体不在原生后端的解码范围内。
 
-native v1 使用 MSE、统一 Adam 学习率、float32 训练和 `norm_mode=3`。它支持
-block、importance sampling、空间/时间分块、streaming 和 residual。tcnn 还提供
-float16、多种 loss、分离的 hash/MLP 学习率和部分高级模型变体。
+原生后端使用统一 Adam 学习率、float32 计算和 `norm_mode=3`，支持 MSE 和
+MSE_RRMSE 损失。`train_dtype: float16` 可以减少目标数据的显存占用，计算仍使用
+float32。它支持像素分组、重要性采样、空间和时间分块、流式读取及残差修正。
+`tcnn_cuda` 还提供 float16 计算、分离的 hash/MLP 学习率和部分高级模型变体。
 
 ## 2. 安装
 
@@ -43,7 +48,7 @@ pip install pygndc
 安装本地 wheel：
 
 ```bash
-pip install pygndc-1.0.11-cp39-abi3-win_amd64.whl
+pip install pygndc-1.0.14-cp312-cp312-win_amd64.whl
 ```
 
 核心依赖包括 `numpy`、`zstandard`、`rasterio`、`pyyaml`、`tqdm`、
@@ -59,10 +64,12 @@ pip install "pygndc[viewer]"
 使用本地 wheel 时：
 
 ```bash
-pip install "pygndc-1.0.11-cp39-abi3-win_amd64.whl[viewer]"
+pip install "pygndc-1.0.14-cp312-cp312-win_amd64.whl[viewer]"
 ```
 
-验证 native runtime：
+以上 wheel 文件适用于 Windows x86-64 和 Python 3.12；其他版本应选择对应的文件。
+
+验证安装：
 
 ```bash
 python -c "import pygndc, pygndc._native; print(pygndc.__version__)"

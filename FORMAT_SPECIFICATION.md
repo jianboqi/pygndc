@@ -260,17 +260,67 @@ The `time` object groups all temporal metadata.
 
 | Field           | Type             | Description |
 |-----------------|------------------|-------------|
-| `values`        | array of string  | One per time index. ISO 8601, MUST include timezone (`Z` or `±HH:MM`). Length == `shape[axes.index("time")]`. |
+| `values`        | array of string  | One per time index. ISO 8601, MUST include timezone (`Z` or `±HH:MM`) and SHOULD keep second precision. Length == `shape[axes.index("time")]`. Same-calendar-day acquisitions (e.g. HLS L30 and S30) MUST be distinct entries; do not truncate to a date. |
 | `calendar`      | string           | CF calendar name (default `"gregorian"`). Allowed: `gregorian`, `proleptic_gregorian`, `noleap`, `360_day`, `julian`. |
 | `global_start`  | string           | ISO 8601 with timezone. Used by readers for time-normalization. |
 | `global_end`    | string           | ISO 8601 with timezone. |
 | `units`         | string  (opt)    | CF-style `units = "days since 2018-01-01T00:00:00Z"` for regular cadence. Mutually exclusive with `values`. |
+| `sensor_id`     | array of int (opt) | Per-acquisition index into `sensors[]`, same length as `values`. Compact on-disk id only — names and observed bands live in the sensors table. Omit for single-sensor products. Old readers ignore the field. |
 
 Either `values` OR (`units` + `global_start` + `global_end`) MUST be
 present if the cube has a `time` axis. All timestamps are interpreted
 in UTC unless an explicit offset is present.
 
-### 4.6 Forward compatibility
+### 4.7 Sensors (optional, multi-sensor cubes)
+
+When `time.sensor_id` is present, `sensors` MUST describe those ids.
+The decoder output is still the canonical `bands[]` vector at every
+`(x,y,t)`. `sensors[].bands` is the subset this instrument **observed**;
+unlisted channels at that timestamp are reconstructed, not measured.
+
+```json
+"sensors": [
+  {
+    "id": 0,
+    "name": "L30",
+    "platform": "Landsat-8/9",
+    "instrument": "OLI",
+    "product": "HLS.L30",
+    "bands": ["blue", "green", "red", "nir_narrow", "swir1", "swir2"],
+    "source_assets": {"blue": "B02", "nir_narrow": "B05"}
+  },
+  {
+    "id": 1,
+    "name": "S30",
+    "platform": "Sentinel-2",
+    "instrument": "MSI",
+    "product": "HLS.S30",
+    "bands": ["blue", "green", "red", "nir_narrow", "swir1", "swir2",
+              "red_edge_1", "red_edge_2", "red_edge_3", "nir_broad"]
+  }
+]
+```
+
+| Field            | Type             | Description |
+|------------------|------------------|-------------|
+| `id`             | int (required)   | Value stored in `time.sensor_id`. Need not be 0-based contiguous, but SHOULD be small. |
+| `name`           | string (required)| Short id, e.g. `"L30"`, `"S30"`, `"MODIS"`. |
+| `bands`          | array of string (required) | Observed canonical names; each MUST exist in `meta.bands[].name`. |
+| `platform`       | string (opt)     | Satellite / constellation. |
+| `instrument`     | string (opt)     | Sensor, e.g. `"OLI"`, `"MSI"`. |
+| `product`        | string (opt)     | Source product id, e.g. `"HLS.L30"`. |
+| `source_assets`  | object (opt)     | Map canonical band name → native file/asset id used at ingest (`B02`, …). Not used at decode. |
+
+A later sensor (Planet, another HLS-like product) is a new table row plus
+new `sensor_id` values. Do not encode names in the per-frame array.
+
+Observed reads (`GNDCDataset.read`, `query(..., interpolate=False)`) MUST
+set unobserved channels to `missing_fill` (default NaN). Continuous
+reconstruction (`interpolate()`, `query(..., interpolate=True)`) returns
+the full canonical vector. Files without `sensors` treat every channel as
+observed (legacy single-sensor cubes).
+
+### 4.8 Forward compatibility
 
 A reader MUST ignore unknown fields in `meta.json`. A writer MAY add
 vendor-specific fields prefixed with `x_` to avoid collisions.

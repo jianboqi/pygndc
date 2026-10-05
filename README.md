@@ -15,7 +15,7 @@ Key capabilities include:
 
 - continuous-time reconstruction;
 - point, window, frame, and time-series queries;
-- native CPU and WGPU execution through Vulkan, DirectX 12, or Metal;
+- native CPU, WGPU (Vulkan, DirectX 12, or Metal), and NVIDIA CUDA execution;
 - compact storage for long satellite-image time series;
 - geospatial metadata, masks, residual correction, and tiled containers.
 
@@ -27,17 +27,16 @@ Install the precompiled binary wheel from PyPI:
 pip install pygndc
 ```
 
-The decoder can be used without an encoder license. Creating new `.gndc` files
-requires a valid commercial encoder license:
+Prebuilt packages support Python 3.10–3.13 on Windows x86-64 and Linux x86-64
+with glibc 2.28 or newer.
 
-```bash
-pygndc license request -o request.json
-pygndc license install license.dat
-pygndc license status
-```
+## Changes in 1.0.14
 
-For an encoder evaluation or commercial license, contact
-[jianboqi@126.com](mailto:jianboqi@126.com).
+- Faster encoder startup and more efficient GPU training.
+- Lower memory use when reading masks and residual corrections from large archives.
+- Faster loading of supported quantized models and repeated queries to the same date.
+
+Existing `.gndc` files remain supported. See [release notes](CHANGELOG.md).
 
 ## Documentation
 
@@ -49,17 +48,9 @@ For an encoder evaluation or commercial license, contact
 - [Python API reference](API_REFERENCE.md) — concise function, class, parameter,
   and return-value reference
 
-## Source and distribution model
+## License
 
-This repository publishes the GeoNDC format specification and user
-documentation. It does not contain the implementation source code.
-
-The `pygndc` wheel is distributed as proprietary binary software. Decoding is
-available without a paid encoder license; encoding is a licensed commercial
-feature. Publishing the format specification does not place the binary SDK or
-its implementation under an open-source license.
-
-See [LICENSE.md](LICENSE.md) for the documentation and software notices.
+See [LICENSE.md](LICENSE.md) for terms of use.
 
 ## Online viewer and sample data
 

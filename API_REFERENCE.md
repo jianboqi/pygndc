@@ -1,7 +1,7 @@
 # pygndc API Reference
 
 This reference describes the public dataset, reader, encoder, backend-selection, and
-analysis APIs in pygndc 1.0.11.
+analysis APIs in pygndc 1.0.14.
 
 ## 1. Package-Level Functions
 
@@ -17,7 +17,7 @@ multi-chunk files.
 | Parameter | Type  | Default         | Description                                          |
 | --------- | ----- | --------------- | ---------------------------------------------------- |
 | `path`    | `str` | required        | Container path                                       |
-| `mode`    | `str` | `"native_wgpu"` | `native_wgpu`, `native_cpu`, or optional `tcnn_cuda` |
+| `mode`    | `str` | `"native_wgpu"` | `native_wgpu`, `native_cpu`, `native_cuda`, or optional `tcnn_cuda` |
 
 ```python
 import pygndc
@@ -25,6 +25,48 @@ import pygndc
 with pygndc.open("data.gndc") as dataset:
     frame = dataset.read(time=0)
 ```
+
+### `GNDCCollection`
+
+```python
+GNDCCollection(
+    path=None,
+    *,
+    mode="native_wgpu",
+    memory_limit=None,
+    max_open=None,
+)
+```
+
+Presents independently encoded `.gndc` members as one indexed logical cube. The
+collection stores paths and geospatial metadata only; member datasets and neural
+chunks are opened lazily.
+
+```python
+from pygndc import GNDCCollection
+
+collection = GNDCCollection(mode="native_cpu")
+collection.add(r"Y:\_GNDC\outputs\*.gndc")
+collection.remove("obsolete_member")
+collection.save("higlass_china.gndc-collection.json")
+
+collection = GNDCCollection.load("higlass_china.gndc-collection.json")
+values = collection.query(
+    points=[(116.4, 39.9), (118.2, 36.5)],
+    time="2023-07-15",
+    bands=[0, 1],
+)
+```
+
+`query()` requires exactly one of `points=` and `bbox=`. `time` accepts one
+observed index/timestamp, a sequence, an inclusive timestamp slice, or `None` for
+the complete observed time axis. Set `interpolate=True` for continuous-time
+evaluation. Large spatiotemporal windows can be returned block-by-block with
+`stream=True` or written to a memory-mapped `.npy` file through `out=`.
+
+Adding and removing members modifies the in-memory index; `save()` persists the
+change. `remove()` never deletes the underlying `.gndc` file. The default member
+cache retains two datasets in `native_wgpu` mode and eight in `native_cpu` mode.
 
 
 
@@ -82,6 +124,7 @@ Returns the current process-wide adapter-index preference.
 | ------------- | -------------------- | -------------------------- | ----------------------------------------------------- |
 | `native_wgpu` | Rust/WGPU            | Vulkan, DX12, or Metal GPU | Standard wheel; runtime CPU fallback                  |
 | `native_cpu`  | Rust                 | CPU                        | Standard wheel                                        |
+| `native_cuda` | Built-in NVIDIA runtime | NVIDIA GPU | Requires a compatible NVIDIA driver |
 | `tcnn_cuda`   | PyTorch/tiny-cuda-nn | NVIDIA CUDA GPU            | User-installed PyTorch CUDA and tiny-cuda-nn bindings |
 
 `native_wgpu` prefers a discrete adapter. If WGPU initialization or execution fails,
@@ -118,11 +161,55 @@ useful when low-energy bands would otherwise be underweighted by ordinary MSE.
 ## 3. `GNDCDataset`
 
 ```python
-GNDCDataset(path: str, mode: str = "native_wgpu")
+GNDCDataset(
+    path: str,
+    mode: str = "native_wgpu",
+    *,
+    reader_pool=None,
+    max_cached_readers=None,
+    decoder_pool=None,
+    prefetch_bytes: int = 0,
+    prefetch_depth: int = 2,
+    prepare_bytes: int = 0,
+    gpu_quantized_upload: bool = True,
+)
 ```
 
 High-level, chunk-aware dataset interface returned by `pygndc.open()`. It supports the
 context manager protocol.
+
+### Loading and memory options
+
+| Parameter | Default | Description |
+|---|---:|---|
+| `max_cached_readers` | `None` | Maximum cached chunk readers. `None` leaves the count unlimited; a supplied `reader_pool` manages its own cache. |
+| `prefetch_bytes` | `0` | Byte budget for compressed chunks waiting to be consumed by `iter_chunk_readers()`. Zero disables background reads. |
+| `prefetch_depth` | `2` | Maximum number of chunks waiting to be consumed. |
+| `prepare_bytes` | `0` | Estimated buffer budget for preparing one next chunk in the background. Requires positive `prefetch_bytes`; zero reads compressed bytes only. |
+| `gpu_quantized_upload` | `True` | Transfer supported quantized weights directly to a WGPU device. Other devices and unsupported layouts use the compatible loading path. |
+
+Prefetch applies to the explicit chunk iterator, not ordinary `read()` calls:
+
+```python
+from pygndc import GNDCDataset
+
+with GNDCDataset("data.gndc", prefetch_bytes=128 * 1024**2) as dataset:
+    with dataset.iter_chunk_readers(dataset.manifest.chunks) as readers:
+        for entry, reader in readers:
+            print(entry.id, entry.file)
+```
+
+The budgets cover waiting chunks and estimated preparation buffers. They do not
+include the chunk currently being queried, loaded models, or all temporary
+allocations, and therefore are not a total process-memory limit. Chunks too
+large for the budget are loaded synchronously. `prefetch_stats` reports consumed
+reads, bytes, waiting time, and peak buffered bytes; waiting time includes
+preparation when enabled.
+
+GPU quantized loading does not reduce the float32 model's device-memory usage.
+Frame-indexed residual corrections are read for requested dates; formats without
+a date index retain their existing decoding behavior. Unreadable residual data
+raises `DecompressionError` instead of returning an incomplete reconstruction.
 
 ### Properties
 
@@ -146,6 +233,23 @@ context manager protocol.
 | `meta`             | `dict`                       | Complete dataset metadata                    |
 | `manifest`         | `Manifest`                   | Parsed chunk manifest                        |
 | `container`        | `Container`                  | Underlying container object                  |
+
+### `query()`
+
+```python
+dataset.query(
+    *,
+    points=None,
+    bbox=None,
+    time=None,
+    bands=None,
+    interpolate=False,
+)
+```
+
+Unified point, time-series, and spatial-window query. It follows the same selector
+and return-shape conventions as `GNDCCollection.query()`, allowing analysis code to
+switch between one container and a collection without changing query names.
 
 ### `metrics()`
 
@@ -504,8 +608,8 @@ from pygndc.licensing import (
 | `license_status()`                          | Returns a `LicenseStatus` record                             |
 | `require_encoder_license()`                 | Raises `RuntimeError` unless encoder authorization is usable |
 
-The native extension performs the authoritative signature, machine, feature, and
-expiry checks for encoder entry points.
+Encoding requires an authentic license for the current machine with the encoder
+feature enabled and an expiry date that has not passed.
 
 ## 7. Standalone Analysis Functions
 

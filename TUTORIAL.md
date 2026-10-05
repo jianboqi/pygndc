@@ -12,9 +12,13 @@ Install the standard package:
 pip install pygndc
 ```
 
-The standard wheel contains the native encoder and decoder. Native execution does not
+Prebuilt packages support Python 3.10–3.13 on Windows x86-64 and Linux x86-64
+with glibc 2.28 or newer. The standard wheel contains the native encoder and decoder. Native execution does not
 require PyTorch, Numba, a CUDA Toolkit, or runtime compilation. `native_wgpu` uses a
 Vulkan, DX12, or Metal adapter and falls back to `native_cpu` if WGPU is unavailable.
+
+Reading and decoding do not require an encoder license. Encoding requires a valid
+license for your machine; contact `jianboqi@126.com` for evaluation or commercial use.
 
 Install the optional viewer dependencies with:
 
@@ -26,7 +30,7 @@ pip install "pygndc[viewer]"
 
 The `tcnn_cuda` integration is included in pygndc, but its external runtime is not.
 To use it, install a CUDA-enabled PyTorch build and compile tiny-cuda-nn's torch
-bindings for the same Python/CUDA environment. Detailed Linux and Windows instructions can be reffered to [GitHub - NVlabs/tiny-cuda-nn: Lightning fast C++/CUDA neural network framework · GitHub](https://github.com/nvlabs/tiny-cuda-nn).
+bindings for the same Python/CUDA environment. Detailed Linux and Windows instructions are available in [GitHub - NVlabs/tiny-cuda-nn: Lightning fast C++/CUDA neural network framework · GitHub](https://github.com/nvlabs/tiny-cuda-nn).
 
 Verify an optional tcnn installation:
 
@@ -40,6 +44,7 @@ python -c "import torch, tinycudann; print(torch.cuda.is_available())"
 | ------------- | ---------------------- | -------------------------- | ----------------------------------------------------- |
 | `native_wgpu` | Rust/WGPU              | Vulkan, DX12, or Metal GPU | Default; prefers a discrete GPU and falls back to CPU |
 | `native_cpu`  | Rust                   | CPU                        | Portable fallback                                     |
+| `native_cuda` | Built-in NVIDIA runtime | NVIDIA GPU | Requires a compatible NVIDIA driver |
 | `tcnn_cuda`   | PyTorch + tiny-cuda-nn | NVIDIA CUDA GPU            | Optional user-installed runtime                       |
 
 List visible WGPU adapters and select one before the first WGPU reader is created:
